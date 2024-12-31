@@ -1,34 +1,25 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, ActivityIndicator, FlatList, Image } from "react-native";
+import { View, Text, StyleSheet, ActivityIndicator, FlatList } from "react-native";
 import { fetchAccount } from "../database/accountService";
-import { fetchTransactions } from "../database/transactionService";
-import { getCryptoPrices } from "../api/cryptoAPI";
 
 export default function HomeScreen() {
   const [account, setAccount] = useState(null);
-  const [cryptoPrices, setCryptoPrices] = useState({});
-  const [transactions, setTransactions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const loadData = async () => {
+    const loadAccount = async () => {
       try {
         setIsLoading(true);
-        const [accountData, cryptoData, transactionsData] = await Promise.all([
-          fetchAccount(),
-          getCryptoPrices(),
-          fetchTransactions(),
-        ]);
+        const AccId = "AccId1"; // Zde vložte existující AccId z Firestore
+        const accountData = await fetchAccount(AccId);
         setAccount(accountData);
-        setCryptoPrices(cryptoData);
-        setTransactions(transactionsData);
       } catch (error) {
-        console.error("Chyba při načítání dat:", error);
+        console.error("Chyba při načítání účtu:", error);
       } finally {
         setIsLoading(false);
       }
     };
-    loadData();
+    loadAccount();
   }, []);
 
   if (isLoading) {
@@ -40,60 +31,62 @@ export default function HomeScreen() {
     );
   }
 
-  return (
-    <FlatList
-      data={transactions}
-      keyExtractor={(item, index) => `${item.id}-${index}`}
-      ListHeaderComponent={
-        <View style={styles.header}>
-          <Text style={styles.welcomeText}>Dobrý den,</Text>
-          <Text style={styles.nameText}>{account?.name || "Uživateli"}!</Text>
-          <View style={styles.balanceCard}>
-            <Text style={styles.balanceLabel}>Váš zůstatek</Text>
-            <Text style={styles.balanceAmount}>
-              ${account?.balance?.toFixed(2) || "0.00"}
-            </Text>
-          </View>
+  if (!account) {
+    return (
+      <View style={styles.errorContainer}>
+        <Text style={styles.errorText}>Účet nebyl nalezen.</Text>
+      </View>
+    );
+  }
 
-          <View style={styles.cryptoContainer}>
-            <Text style={styles.sectionTitle}>Kryptoměny</Text>
-            <View style={styles.cryptoGrid}>
-              {Object.entries(cryptoPrices || {}).map(([id, data]) => (
-                <View key={id} style={styles.cryptoCard}>
-                  <Image source={{ uri: data.icon }} style={styles.cryptoIcon} />
-                  <Text style={styles.cryptoName}>
-                    {id.charAt(0).toUpperCase() + id.slice(1)}
-                  </Text>
-                  <Text style={styles.cryptoPrice}>
-                    ${data.usd?.toFixed(2) || "0.00"}
-                  </Text>
-                </View>
-              ))}
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>Účet: {account.name || "Uživateli"}</Text>
+      <Text>Email: {account.email}</Text>
+      <Text>Zůstatek: {account.balance?.toFixed(2)} CZK</Text>
+
+      <Text style={styles.sectionTitle}>Transakce:</Text>
+      {account.transactions.length > 0 ? (
+        <FlatList
+          data={account.transactions}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <View style={styles.transactionCard}>
+              <Text>Typ: {item.type}</Text>
+              <Text>Měna: {item.currency}</Text>
+              <Text>Částka: {item.amount}</Text>
+              <Text>Hodnota v CZK: {item.valueCZK}</Text>
+              <Text>Datum: {new Date(item.createdAt).toLocaleDateString()}</Text>
             </View>
-          </View>
-        </View>
-      }
-      renderItem={({ item }) => (
-        <View style={styles.transactionCard}>
-          <Text style={styles.transactionType}>
-            {item.type.toUpperCase()}
-          </Text>
-          <Text style={styles.transactionAmount}>
-            {item.amount} {item.currency}
-          </Text>
-          <Text style={styles.transactionDate}>
-            {item.date ? new Date(item.date).toLocaleDateString() : "Neplatné datum"}
-          </Text>
-        </View>
+          )}
+        />
+      ) : (
+        <Text>Žádné transakce.</Text>
       )}
-      ListEmptyComponent={<Text style={styles.noTransactions}>Žádné transakce k dispozici.</Text>}
-    />
+
+      <Text style={styles.sectionTitle}>Portfolio:</Text>
+      {account.portfolio.length > 0 ? (
+        <FlatList
+          data={account.portfolio}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <View style={styles.portfolioCard}>
+              <Text>Měna: {item.currency}</Text>
+              <Text>Částka: {item.amount}</Text>
+            </View>
+          )}
+        />
+      ) : (
+        <Text>Žádné portfolio.</Text>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    padding: 20,
     backgroundColor: "#f8fafc",
   },
   loadingContainer: {
@@ -107,122 +100,43 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#64748b",
   },
-  header: {
+  errorContainer: {
+    flex: 1,
+    justifyContent: "center",
     alignItems: "center",
-    marginBottom: 24,
   },
-  welcomeText: {
+  errorText: {
+    fontSize: 18,
+    color: "red",
+  },
+  title: {
     fontSize: 24,
-    color: "#64748b",
-  },
-  nameText: {
-    fontSize: 32,
     fontWeight: "bold",
-    color: "#1e293b",
-    marginTop: 4,
-  },
-  balanceCard: {
-    backgroundColor: "#2563eb",
-    padding: 20,
-    borderRadius: 16,
-    width: "100%",
-    alignItems: "center",
-    marginTop: 20,
-    shadowColor: "#2563eb",
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 4.65,
-    elevation: 8,
-  },
-  balanceLabel: {
-    fontSize: 16,
-    color: "#e0e7ff",
-    marginBottom: 8,
-  },
-  balanceAmount: {
-    fontSize: 36,
-    fontWeight: "bold",
-    color: "#ffffff",
-  },
-  cryptoContainer: {
-    marginTop: 24,
+    marginBottom: 10,
   },
   sectionTitle: {
     fontSize: 20,
-    fontWeight: "600",
-    color: "#1e293b",
-    marginBottom: 16,
-  },
-  cryptoGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-  },
-  cryptoCard: {
-    backgroundColor: "white",
-    padding: 16,
-    borderRadius: 12,
-    width: "48%",
-    marginBottom: 16,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
-    alignItems: "center",
-  },
-  cryptoIcon: {
-    width: 50,
-    height: 50,
-    marginBottom: 8,
-  },
-  cryptoName: {
-    fontSize: 16,
-    color: "#64748b",
-    marginBottom: 4,
-  },
-  cryptoPrice: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#1e293b",
+    marginTop: 20,
+    marginBottom: 10,
   },
   transactionCard: {
-    backgroundColor: "white",
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 16,
+    backgroundColor: "#fff",
+    padding: 10,
+    marginBottom: 10,
+    borderRadius: 8,
     shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
     shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
   },
-  transactionType: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#1e293b",
-    marginBottom: 4,
-  },
-  transactionAmount: {
-    fontSize: 16,
-    color: "#64748b",
-  },
-  transactionDate: {
-    fontSize: 14,
-    color: "#94a3b8",
-  },
-  noTransactions: {
-    fontSize: 16,
-    color: "#64748b",
-    textAlign: "center",
+  portfolioCard: {
+    backgroundColor: "#fff",
+    padding: 10,
+    marginBottom: 10,
+    borderRadius: 8,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
   },
 });

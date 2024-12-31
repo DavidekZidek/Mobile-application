@@ -3,6 +3,7 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import HomeScreen from "../screens/HomeScreen"; // Opravený import
 import MarketScreen from "../screens/MarketScreen";
 import SettingsScreen from "../screens/SettingsScreen";
+import TestScreen from "../screens/TestScreen"; // Přidání TestScreen
 import { Ionicons } from "@expo/vector-icons";
 
 const Tab = createBottomTabNavigator();
@@ -21,6 +22,8 @@ export default function BottomTabNavigator() {
             iconName = focused ? "stats-chart" : "stats-chart-outline";
           } else if (route.name === "Settings") {
             iconName = focused ? "settings" : "settings-outline";
+          } else if (route.name === "Test") {
+            iconName = focused ? "flask" : "flask-outline";
           }
 
           return <Ionicons name={iconName} size={focused ? 28 : 24} color={color} />;
@@ -44,6 +47,7 @@ export default function BottomTabNavigator() {
       <Tab.Screen name="Home" component={HomeScreen} options={{ title: "Domů" }} />
       <Tab.Screen name="Market" component={MarketScreen} options={{ title: "Trh" }} />
       <Tab.Screen name="Settings" component={SettingsScreen} options={{ title: "Nastavení" }} />
+      <Tab.Screen name="Test" component={TestScreen} options={{ title: "Test" }} />
     </Tab.Navigator>
   );
 }

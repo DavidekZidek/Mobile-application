@@ -1,21 +1,49 @@
-import { db } from "./firebaseConfig"; // Opravená cesta
-import { doc, getDoc } from "firebase/firestore";
+import { db } from "./firebaseConfig";
+import { collection, getDocs } from "firebase/firestore";
 
-// Načtení dat o účtu
 export const fetchAccount = async () => {
   try {
-    // Načteme dokument 'FirstUser' z kolekce 'accounts'
-    const accountRef = doc(db, "accounts", "FirstUser"); // Použijeme název dokumentu 'FirstUser'
-    const accountSnap = await getDoc(accountRef);
+    console.log("Načítám první účet z kolekce accounts");
 
-    if (accountSnap.exists()) {
-      return accountSnap.data(); // Vrátíme data dokumentu
+    const accountsRef = collection(db, "accounts");
+    const accountsSnap = await getDocs(accountsRef);
+
+    if (!accountsSnap.empty) {
+      const firstDoc = accountsSnap.docs[0];
+      const accountData = firstDoc.data();
+
+      console.log("První účet nalezen:", accountData);
+
+      // Načtení podkolekcí
+      const transactionsRef = collection(db, `accounts/${firstDoc.id}/transactions`);
+      const transactionsSnap = await getDocs(transactionsRef);
+      const transactions = transactionsSnap.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      const portfolioRef = collection(db, `accounts/${firstDoc.id}/portfolio`);
+      const portfolioSnap = await getDocs(portfolioRef);
+      const portfolio = portfolioSnap.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      console.log("Transakce:", transactions);
+      console.log("Portfolio:", portfolio);
+
+      return {
+        id: firstDoc.id,
+        transactions,
+        portfolio,
+        ...accountData,
+      };
     } else {
-      console.error("Účet FirstUser neexistuje!");
+      console.warn("Žádné účty nebyly nalezeny v kolekci accounts");
       return null;
     }
   } catch (error) {
-    console.error("Chyba při načítání účtu:", error);
-    throw error; // Zpětné vyhození chyby pro další zpracování
+    console.error("Chyba při načítání účtu:", error.message);
+    throw error;
   }
 };
