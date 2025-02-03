@@ -1,6 +1,7 @@
-import React from 'react';
-import BottomTabNavigator from './navigation/BottomTabNavigator';
+import React from "react";
+import AppNavigator from "./navigation/AppNavigator"; // Hlavní navigátor
+
 
 export default function App() {
-  return <BottomTabNavigator />;
+  return <AppNavigator />;
 }

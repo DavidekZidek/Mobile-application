@@ -1,49 +1,54 @@
-import { db } from "./firebaseConfig";
-import { collection, getDocs } from "firebase/firestore";
+import { db, auth } from "./firebaseConfig";
+import { collection, query, where, getDocs, doc, getDoc, onSnapshot } from "firebase/firestore";
 
-export const fetchAccount = async () => {
-  try {
-    console.log("Načítám první účet z kolekce accounts");
+/**
+ * Poslouchá změny účtu v reálném čase a aktualizuje UI.
+ */
+export const listenToAccountChanges = (callback) => {
+  const user = auth.currentUser;
+  if (!user) {
+    console.error("No user logged in.");
+    return;
+  }
 
-    const accountsRef = collection(db, "accounts");
-    const accountsSnap = await getDocs(accountsRef);
+  const userId = user.uid;
+  const accountRef = doc(db, "accounts", userId);
 
-    if (!accountsSnap.empty) {
-      const firstDoc = accountsSnap.docs[0];
-      const accountData = firstDoc.data();
-
-      console.log("První účet nalezen:", accountData);
-
-      // Načtení podkolekcí
-      const transactionsRef = collection(db, `accounts/${firstDoc.id}/transactions`);
-      const transactionsSnap = await getDocs(transactionsRef);
-      const transactions = transactionsSnap.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-
-      const portfolioRef = collection(db, `accounts/${firstDoc.id}/portfolio`);
-      const portfolioSnap = await getDocs(portfolioRef);
-      const portfolio = portfolioSnap.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-
-      console.log("Transakce:", transactions);
-      console.log("Portfolio:", portfolio);
-
-      return {
-        id: firstDoc.id,
-        transactions,
-        portfolio,
-        ...accountData,
-      };
+  return onSnapshot(accountRef, (docSnapshot) => {
+    if (docSnapshot.exists()) {
+      console.log("🔄 Account data updated:", docSnapshot.data());
+      callback({ id: userId, ...docSnapshot.data() });
     } else {
-      console.warn("Žádné účty nebyly nalezeny v kolekci accounts");
+      console.warn("⚠️ Account not found.");
+    }
+  });
+};
+
+/**
+ * Načítá účet přihlášeného uživatele.
+ */
+export const fetchAccount = async () => {
+  const user = auth.currentUser;
+  if (!user) {
+    throw new Error("No user logged in.");
+  }
+
+  const userId = user.uid;
+  const accountRef = doc(db, "accounts", userId);
+  console.log("🔄 Fetching account data for UID:", userId);
+
+  try {
+    const accountSnap = await getDoc(accountRef);
+
+    if (!accountSnap.exists()) {
+      console.warn("⚠️ Account not found in Firestore.");
       return null;
     }
+
+    console.log("✅ Account data loaded:", accountSnap.data());
+    return { id: userId, ...accountSnap.data() };
   } catch (error) {
-    console.error("Chyba při načítání účtu:", error.message);
-    throw error;
+    console.error("❌ Error fetching account data:", error);
+    throw new Error("Failed to fetch account data.");
   }
 };

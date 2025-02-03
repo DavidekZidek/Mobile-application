@@ -1,250 +1,150 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, FlatList, TouchableWithoutFeedback } from "react-native";
-import Svg, { Path } from "react-native-svg";
-import { fetchAccount } from "../database/accountService";
+import { View, Text, StyleSheet, FlatList, ActivityIndicator } from "react-native";
+import { PieChart } from "react-native-chart-kit";
+import { Dimensions } from "react-native";
+import { fetchPortfolioData } from "../database/portfolioService";
 
-export default function MarketScreen() {
+const screenWidth = Dimensions.get("window").width;
+
+export default function PortfolioScreen() {
   const [portfolio, setPortfolio] = useState([]);
+  const [totalValue, setTotalValue] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
-  const [hoveredSlice, setHoveredSlice] = useState(null);
-
-  const cryptoColors = {
-    BTC: "#f7931a",
-    ETH: "#627eea",
-    LTC: "#b8b8b8",
-    ADA: "#0033ad",
-    DOT: "#e6007a",
-    XRP: "#346aa9",
-    DOGE: "#c2a633",
-    SOL: "#4e44ce", // Přidána Solana
-  };
-
-  const defaultColor = "#cccccc"; // Barva pro neznámé kryptoměny
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    const loadAccount = async () => {
+    const loadPortfolioData = async () => {
       try {
-        const accountData = await fetchAccount();
-        if (accountData && accountData.portfolio) {
-          const updatedPortfolio = await Promise.all(
-            accountData.portfolio.map(async (item) => {
-              const priceUSD = await fetchPriceFromAPI(item.currency);
-              const priceCZK = priceUSD * await fetchExchangeRateUSDToCZK();
-              return {
+        setIsLoading(true);
+        setError(null);
+
+        const portfolioData = await fetchPortfolioData();
+
+        if (!portfolioData || !Array.isArray(portfolioData.portfolio)) {
+          console.warn("Portfolio is empty or failed to load. Using empty data.");
+          setPortfolio([]);
+          setTotalValue(0);
+        } else {
+          const combinedPortfolio = portfolioData.portfolio.reduce((acc, item) => {
+            const existing = acc.find((i) => i.currency === item.currency);
+            if (existing) {
+              existing.amount += item.amount;
+              existing.value += item.value;
+            } else {
+              acc.push({
                 ...item,
-                price: priceCZK,
-              };
-            })
-          );
-          // Seřaďte portfolio od největšího po nejmenší
-          const sortedPortfolio = updatedPortfolio.sort((a, b) => b.amount * b.price - a.amount * a.price);
-          setPortfolio(sortedPortfolio);
+                value: item.value,
+              });
+            }
+            return acc;
+          }, []);
+
+          combinedPortfolio.sort((a, b) => b.value - a.value);
+          setPortfolio(combinedPortfolio);
+          setTotalValue(combinedPortfolio.reduce((sum, item) => sum + item.value, 0));
         }
       } catch (error) {
-        console.error("Chyba při načítání portfolia:", error);
+        setError(error.message || "Failed to load portfolio data.");
+        console.error("Portfolio loading error:", error);
       } finally {
         setIsLoading(false);
       }
     };
 
-    loadAccount();
+    loadPortfolioData();
   }, []);
 
   if (isLoading) {
     return (
-      <View style={styles.loadingContainer}>
-        <Text>Načítání portfolia...</Text>
+      <View style={styles.centerContainer}>
+        <ActivityIndicator size="large" color="#0000ff" />
+        <Text style={styles.loadingText}>Loading portfolio...</Text>
       </View>
     );
   }
 
-  if (portfolio.length === 0) {
+  if (error) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.errorText}>Portfolio je prázdné.</Text>
+      <View style={styles.centerContainer}>
+        <Text style={styles.errorText}>{error}</Text>
       </View>
     );
   }
 
-  const totalValue = portfolio.reduce((sum, item) => sum + item.amount * item.price, 0);
+  const chartData = portfolio.map((item) => ({
+    name: item.currency,
+    population: parseFloat(item.value.toFixed(2)),
+    color: item.color,
+    legendFontColor: "#7F7F7F",
+    legendFontSize: 15,
+  }));
 
-  const renderPieChart = () => {
-    let cumulativePercentage = 0;
-
-    return portfolio.map((item, index) => {
-      const value = item.amount * item.price;
-      const percentage = value / totalValue;
-      const startAngle = cumulativePercentage * 2 * Math.PI;
-      const endAngle = (cumulativePercentage + percentage) * 2 * Math.PI;
-      cumulativePercentage += percentage;
-
-      const largeArcFlag = endAngle - startAngle > Math.PI ? 1 : 0;
-      const x1 = 50 + 40 * Math.cos(startAngle);
-      const y1 = 50 + 40 * Math.sin(startAngle);
-      const x2 = 50 + 40 * Math.cos(endAngle);
-      const y2 = 50 + 40 * Math.sin(endAngle);
-
-      const pathData = `M50,50 L${x1.toFixed(2)},${y1.toFixed(2)} A40,40 0 ${largeArcFlag} 1 ${x2.toFixed(2)},${y2.toFixed(2)} Z`;
-
-      const color = cryptoColors[item.currency] || defaultColor;
-
-      return (
-        <TouchableWithoutFeedback
-          key={index}
-          onPressIn={() => setHoveredSlice(item)}
-          onPressOut={() => setHoveredSlice(null)}
-        >
-          <Path d={pathData} fill={color} />
-        </TouchableWithoutFeedback>
-      );
-    });
-  };
-
-  const renderBars = () => {
-    return portfolio.map((item, index) => {
-      const value = item.amount * item.price;
-      const percentage = (value / totalValue) * 100;
-      const color = cryptoColors[item.currency] || defaultColor;
-
-      return (
-        <View key={index} style={styles.barContainer}>
-          <Text style={[styles.cryptoText, { color }]}>{item.currency}</Text>
-          <View style={styles.barBackground}>
-            <View style={[styles.barFill, { width: `${percentage}%`, backgroundColor: color }]} />
-          </View>
-          <Text style={styles.cryptoText}>{percentage.toFixed(2)}% ({value.toFixed(2)} CZK)</Text>
+  const renderPortfolioItem = ({ item }) => (
+    <View style={styles.row}>
+      <View style={[styles.colorIndicator, { backgroundColor: item.color }]} />
+      <View style={styles.rowTextContainer}>
+        <Text style={styles.currencyText}>{item.currency}</Text>
+        <View style={styles.valueContainer}>
+          <Text style={styles.amountText}>{item.amount.toFixed(4)}</Text>
+          <Text style={styles.valueText}>{item.value.toFixed(2)} USD</Text>
         </View>
-      );
-    });
-  };
+      </View>
+    </View>
+  );
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Portfolio</Text>
+      <Text style={styles.title}>Crypto Portfolio</Text>
+      <Text style={styles.totalValueText}>
+        Total Value: {totalValue.toFixed(2)} USD
+      </Text>
 
-      <Svg height="250" width="250" viewBox="0 0 100 100">
-        {renderPieChart()}
-      </Svg>
+      <PieChart
+        data={chartData}
+        width={screenWidth - 40}
+        height={220}
+        chartConfig={{
+          backgroundColor: "#ffffff",
+          backgroundGradientFrom: "#ffffff",
+          backgroundGradientTo: "#ffffff",
+          color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+          decimalPlaces: 2,
+        }}
+        accessor="population"
+        backgroundColor="transparent"
+        paddingLeft="15"
+        absolute
+      />
 
-      {hoveredSlice && (
-        <View style={styles.hoveredInfo}>
-          <Text style={styles.hoveredText}>
-            {hoveredSlice.currency}: {((hoveredSlice.amount * hoveredSlice.price / totalValue) * 100).toFixed(2)}%
-          </Text>
-        </View>
-      )}
-
-      <View style={styles.summaryContainer}>
-        <Text style={styles.summaryText}>Celková hodnota: {totalValue.toFixed(2)} CZK</Text>
-      </View>
-
-      {renderBars()}
+      <FlatList
+        data={portfolio}
+        keyExtractor={(item, index) => `${item.currency}-${index}`}
+        renderItem={renderPortfolioItem}
+        style={styles.list}
+        ListEmptyComponent={
+          <View style={styles.centerContainer}>
+            <Text style={styles.infoText}>Portfolio is empty.</Text>
+          </View>
+        }
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 20,
-    backgroundColor: "#f8fafc",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  errorText: {
-    fontSize: 16,
-    color: "red",
-    textAlign: "center",
-    marginTop: 20,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: "bold",
-    marginBottom: 20,
-    textAlign: "center",
-  },
-  hoveredInfo: {
-    marginTop: 10,
-    padding: 10,
-    backgroundColor: "#e2e8f0",
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  hoveredText: {
-    fontSize: 16,
-    fontWeight: "bold",
-  },
-  summaryContainer: {
-    marginTop: 20,
-    padding: 10,
-    backgroundColor: "#e2e8f0",
-    borderRadius: 10,
-    alignItems: "center",
-  },
-  summaryText: {
-    fontSize: 16,
-    fontWeight: "bold",
-  },
-  barContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginVertical: 5,
-    width: "100%",
-  },
-  barBackground: {
-    flex: 1,
-    height: 10,
-    backgroundColor: "#e2e8f0",
-    borderRadius: 5,
-    marginHorizontal: 10,
-  },
-  barFill: {
-    height: "100%",
-    borderRadius: 5,
-  },
-  cryptoText: {
-    fontSize: 14,
-  },
+  container: { flex: 1, padding: 20, backgroundColor: "#f9fafe" },
+  centerContainer: { flex: 1, justifyContent: "center", alignItems: "center", padding: 20 },
+  title: { fontSize: 24, fontWeight: "bold", textAlign: "center", marginBottom: 10 },
+  totalValueText: { fontSize: 18, fontWeight: "600", textAlign: "center", marginBottom: 20, color: "#333" },
+  loadingText: { marginTop: 10, fontSize: 16, color: "#666" },
+  errorText: { fontSize: 16, color: "#ff0000", textAlign: "center" },
+  infoText: { fontSize: 16, color: "#333", textAlign: "center" },
+  list: { marginTop: 20 },
+  row: { flexDirection: "row", alignItems: "center", paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "#e5e7eb" },
+  colorIndicator: { width: 20, height: 20, borderRadius: 10, marginRight: 10 },
+  rowTextContainer: { flex: 1, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  currencyText: { fontSize: 16, fontWeight: "600", color: "#333" },
+  valueContainer: { alignItems: "flex-end" },
+  amountText: { fontSize: 14, color: "#999" },
+  valueText: { fontSize: 16, fontWeight: "600", color: "#333" },
 });
-
-async function fetchPriceFromAPI(currency) {
-  const currencyMapping = {
-    BTC: "bitcoin",
-    ETH: "ethereum",
-    LTC: "litecoin",
-    ADA: "cardano",
-    DOT: "polkadot",
-    XRP: "ripple",
-    DOGE: "dogecoin",
-    SOL: "solana",
-  };
-
-  const apiCurrency = currencyMapping[currency] || currency.toLowerCase();
-
-  try {
-    const response = await fetch(
-      `https://api.coingecko.com/api/v3/simple/price?ids=${apiCurrency}&vs_currencies=usd`
-    );
-    const data = await response.json();
-    return data[apiCurrency]?.usd || 0;
-  } catch (error) {
-    console.error(`Chyba při načítání ceny pro ${currency}:`, error);
-    return 0;
-  }
-}
-
-async function fetchExchangeRateUSDToCZK() {
-  try {
-    const response = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=usd&vs_currencies=czk");
-    const data = await response.json();
-    return data.usd?.czk || 1;
-  } catch (error) {
-    console.error("Chyba při načítání směnného kurzu USD na CZK:", error);
-    return 1;
-  }
-}
